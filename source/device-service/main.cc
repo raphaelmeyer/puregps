@@ -4,10 +4,12 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <array>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdio>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -40,25 +42,48 @@ void probe(std::string device_name) {
   tcsetattr(fd, TCSANOW, &options);
 
   try {
-    // TODO: computer says NO.
+    std::array<std::uint8_t, 32> command{{0x56, 0x0c, 0x00, 0x00, 0x00, 0x00,
+                                          0x00, 0x00, 0x45, 0x00, 0x00, 0xa7}};
+    std::array<std::uint8_t, 64> response{};
 
-    std::uint8_t command{};
-    std::uint8_t response[32]{};
+    if (::write(fd, command.data(), 12) < 0) {
+      throw std::runtime_error{"write error"};
+    }
 
-    command = 0xfe;
-    if (::write(fd, &command, 1) < 0) {
-      throw std::runtime_error{"write 0xf4"};
+    auto n = ::read(fd, response.data(), 64);
+    while (n > 0) {
+      if (n < 0) {
+        throw std::runtime_error{"read error"};
+      }
+      for (int i = 0; i < n; i += 16) {
+        for (int j = 0; j < 16; ++j) {
+          if (i + j < n) {
+            if (std::isprint(response[i + j])) {
+              std::cout << response[i + j];
+            } else {
+              std::cout << ".";
+            }
+          } else {
+            std::cout << " ";
+          }
+        }
+        std::cout << "  ";
+        for (int j = 0; j < 16 && i + j < n; ++j) {
+          std::cout << std::hex << std::setw(2) << std::setfill('0')
+                    << static_cast<uint16_t>(response[i + j]) << " ";
+        }
+        std::cout << "\n";
+      }
+      n = ::read(fd, response.data(), 64);
     }
-    if (::read(fd, response, 11) < 11) {
-      throw std::runtime_error{"read 0xf4"};
-    }
-    std::cout << static_cast<uint16_t>(response[0]) << " "
-              << static_cast<uint16_t>(response[1]) << "\n";
   } catch (std::runtime_error const &error) {
     std::cout << "error : " << error.what() << "\n";
   }
 
   ::close(fd);
+
+  std::cout << "reading done"
+            << "\n";
 }
 
 } // namespace
